@@ -42,16 +42,22 @@ value
 """{0}/781333.xml:4: element a: validity error : Element a content does not follow the DTD, expecting ( ..., got 
 <a/>
     ^
+{0}/781333.xml:5: element a: validity error : Element a content does not follow the DTD, Expecting more children
+
+^
 """.format(dir_prefix),
     'cond_sect2':
-"""{0}/dtds/cond_sect2.dtd:15: parser error : All markup of the conditional section is not in the same entity
+"""{0}/dtds/cond_sect2.dtd:15: parser error : Parameter entity must match extSubsetDecl
     %ent;
          ^
 Entity: line 1: 
 ]]>
 ^
-{0}/dtds/cond_sect2.dtd:17: parser error : Content error in the external subset
-
+{0}/dtds/cond_sect2.dtd:15: parser error : Content error in the external subset
+    %ent;
+         ^
+Entity: line 1: 
+]]>
 ^
 """.format(dir_prefix),
     'rss':

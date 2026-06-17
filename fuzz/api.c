@@ -35,7 +35,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define XML_DEPRECATED
+#ifndef XML_DEPRECATED
+  #define XML_DEPRECATED
+#endif
+#ifndef XML_DEPRECATED_MEMBER
+  #define XML_DEPRECATED_MEMBER
+#endif
 
 #include <libxml/catalog.h>
 #include <libxml/HTMLtree.h>
@@ -2459,11 +2464,14 @@ LLVMFuzzerTestOneInput(const char *data, size_t size) {
                 first = getNode(0);
                 second = getNode(1);
                 argsOk =
-                    (first != NULL && first->type == XML_TEXT_NODE &&
-                     second != NULL && second->type == XML_TEXT_NODE &&
-                     first != second &&
-                     first->name == second->name);
-                if (argsOk) {
+                    first == NULL ?
+                        second != NULL :
+                        second == NULL ||
+                        (first->type == XML_TEXT_NODE &&
+                         second->type == XML_TEXT_NODE &&
+                         first != second &&
+                         first->name == second->name);
+                if (argsOk && second != NULL) {
                     if (second->parent != NULL)
                         parent = second->parent;
                     else
@@ -2472,7 +2480,7 @@ LLVMFuzzerTestOneInput(const char *data, size_t size) {
                 }
                 res = xmlTextMerge(first, second);
                 oomReport = (argsOk && res == NULL);
-                if (res != NULL) {
+                if (res != NULL && first != NULL) {
                     removeNode(second);
                     dropNode(parent);
                     checkContent(first);
@@ -2644,7 +2652,7 @@ LLVMFuzzerTestOneInput(const char *data, size_t size) {
                     oomReport = 0;
                 /*
                  * Don't reference XML_ELEMENT_TYPE_UNDEFINED dummy
-                 * declarations.
+                 * declarations which can be freed by xmlAddElementDecl.
                  */
                 if (elem != NULL && elem->parent == NULL)
                     elem = NULL;
@@ -3590,5 +3598,17 @@ LLVMFuzzerTestOneInput(const char *data, size_t size) {
     xmlFuzzDataCleanup();
     xmlResetLastError();
     return(0);
+}
+
+size_t
+LLVMFuzzerCustomMutator(char *data, size_t size, size_t maxSize,
+                        unsigned seed) {
+    static const xmlFuzzChunkDesc chunks[] = {
+        { 4, XML_FUZZ_PROB_ONE / 10 }, /* failurePos */
+        { 0, 0 }
+    };
+
+    return xmlFuzzMutateChunks(chunks, data, size, maxSize, seed,
+                               LLVMFuzzerMutate);
 }
 

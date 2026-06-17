@@ -21,6 +21,8 @@
 /*
  * Untested options:
  *
+ * --memory: Requires temp file
+ *
  * --catalogs: Requires XML catalogs
  *
  * --dtdvalid:
@@ -45,17 +47,17 @@ static const char *const switches[] = {
     "--compress",
     "--copy",
     "--debug",
-    "--debugent",
+    NULL,
     "--dropdtd",
     "--dtdattr",
     "--exc-c14n",
     "--format",
-    "--htmlout",
+    NULL,
     "--huge",
     "--insert",
     "--loaddtd",
     "--load-trace",
-    "--memory",
+    NULL,
     "--noblanks",
     "--nocdata",
     "--nocompact",
@@ -67,7 +69,7 @@ static const char *const switches[] = {
     "--nonet",
     "--noout",
     "--nowarning",
-    "--nowrap",
+    NULL,
     "--noxincludenode",
     "--nsclean",
     "--oldxml10",
@@ -79,7 +81,7 @@ static const char *const switches[] = {
     "--recover",
     "--repeat",
     "--sax1",
-    "--testIO",
+    NULL,
     "--timing",
     "--valid",
     "--version",
@@ -128,6 +130,11 @@ LLVMFuzzerTestOneInput(const char *data, size_t size) {
     size_t ssize, docSize, i;
     unsigned uval;
     int ival;
+
+    if (xmlMemUsed() != 0) {
+        fprintf(stderr, "Undetected leak in previous iteration\n");
+        abort();
+    }
 
     vars.argv = malloc((numSwitches + 5 + 6 * 2) * sizeof(vars.argv[0]));
     vars.argi = 0;
@@ -185,7 +192,7 @@ LLVMFuzzerTestOneInput(const char *data, size_t size) {
 
     ival = xmlFuzzReadInt(1);
     if (ival != 0) {
-        snprintf(prettyBuf, 20, "%d", ival - 128);
+        snprintf(prettyBuf, 20, "%d", ival % 4);
         pushArg("--pretty");
         pushArg(prettyBuf);
     }
@@ -231,3 +238,19 @@ exit:
     free(vars.argv);
     return(0);
 }
+
+size_t
+LLVMFuzzerCustomMutator(char *data, size_t size, size_t maxSize,
+                        unsigned seed) {
+    static const xmlFuzzChunkDesc chunks[] = {
+        { 8, XML_FUZZ_PROB_ONE / 10  }, /* switches */
+        { 4, XML_FUZZ_PROB_ONE / 10  }, /* maxmem */
+        { 1, XML_FUZZ_PROB_ONE / 100 }, /* maxAmpl */
+        { 1, XML_FUZZ_PROB_ONE / 100 }, /* pretty */
+        { 0, 0 }
+    };
+
+    return xmlFuzzMutateChunks(chunks, data, size, maxSize, seed,
+                               LLVMFuzzerMutate);
+}
+

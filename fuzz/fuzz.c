@@ -40,6 +40,8 @@ static struct {
     /* The first entity is the main entity. */
     const char *mainUrl;
     xmlFuzzEntityInfo *mainEntity;
+    const char *secondaryUrl;
+    xmlFuzzEntityInfo *secondaryEntity;
 } fuzzData;
 
 size_t fuzzNumAttempts;
@@ -195,6 +197,8 @@ xmlFuzzDataInit(const char *data, size_t size) {
     fuzzData.entities = xmlHashCreate(8);
     fuzzData.mainUrl = NULL;
     fuzzData.mainEntity = NULL;
+    fuzzData.secondaryUrl = NULL;
+    fuzzData.secondaryEntity = NULL;
 }
 
 /**
@@ -390,6 +394,9 @@ xmlFuzzReadEntities(void) {
             if (num == 0) {
                 fuzzData.mainUrl = url;
                 fuzzData.mainEntity = entityInfo;
+            } else if (num == 1) {
+                fuzzData.secondaryUrl = url;
+                fuzzData.secondaryEntity = entityInfo;
             }
 
             num++;
@@ -422,15 +429,40 @@ xmlFuzzMainEntity(size_t *size) {
 }
 
 /**
+ * xmlFuzzSecondaryUrl:
+ *
+ * Returns the secondary URL.
+ */
+const char *
+xmlFuzzSecondaryUrl(void) {
+    return(fuzzData.secondaryUrl);
+}
+
+/**
+ * xmlFuzzSecondaryEntity:
+ * @size:  size of the secondary entity in bytes
+ *
+ * Returns the secondary entity.
+ */
+const char *
+xmlFuzzSecondaryEntity(size_t *size) {
+    if (fuzzData.secondaryEntity == NULL)
+        return(NULL);
+    *size = fuzzData.secondaryEntity->size;
+    return(fuzzData.secondaryEntity->data);
+}
+
+/**
  * xmlFuzzResourceLoader:
  *
  * The resource loader for fuzz data.
  */
-int
+xmlParserErrors
 xmlFuzzResourceLoader(void *data ATTRIBUTE_UNUSED, const char *URL,
                       const char *ID ATTRIBUTE_UNUSED,
                       xmlResourceType type ATTRIBUTE_UNUSED,
-                      int flags ATTRIBUTE_UNUSED, xmlParserInputPtr *out) {
+                      xmlParserInputFlags flags ATTRIBUTE_UNUSED,
+                      xmlParserInputPtr *out) {
     xmlParserInputPtr input;
     xmlFuzzEntityInfo *entity;
 
@@ -496,5 +528,76 @@ xmlFuzzOutputClose(void *ctxt ATTRIBUTE_UNUSED) {
         return XML_IO_EIO;
 
     return 0;
+}
+
+/**
+ * xmlFuzzMutateChunks:
+ * @chunks: array of chunk descriptions
+ * @data: fuzz data (from LLVMFuzzerCustomMutator)
+ * @size: data size (from LLVMFuzzerCustomMutator)
+ * @maxSize: max data size (from LLVMFuzzerCustomMutator)
+ * @seed: seed (from LLVMFuzzerCustomMutator)
+ * @mutator: mutator function, use LLVMFuzzerMutate
+ *
+ * Mutates one of several chunks with a given probability.
+ *
+ * Probability is a value between 0 and XML_FUZZ_PROB_ONE.
+ *
+ * The last chunk has flexible size and must have size and
+ * mutateProb set to 0.
+ *
+ * Returns the size of the mutated data like LLVMFuzzerCustomMutator.
+ */
+size_t
+xmlFuzzMutateChunks(const xmlFuzzChunkDesc *chunks,
+                    char *data, size_t size, size_t maxSize, unsigned seed,
+                    xmlFuzzMutator mutator) {
+    size_t off = 0;
+    size_t ret, chunkSize, maxChunkSize, mutSize;
+    unsigned prob = seed % XML_FUZZ_PROB_ONE;
+    unsigned descSize = 0;
+    int i = 0;
+
+    while (1) {
+        unsigned descProb;
+
+        descSize = chunks[i].size;
+        descProb = chunks[i].mutateProb;
+
+        if (descSize == 0 ||
+            off + descSize > size ||
+            off + descSize >= maxSize ||
+            prob < descProb)
+            break;
+
+        off += descSize;
+        prob -= descProb;
+        i += 1;
+    }
+
+    chunkSize = size - off;
+    maxChunkSize = maxSize - off;
+
+    if (descSize != 0) {
+        if (chunkSize > descSize)
+            chunkSize = descSize;
+        if (maxChunkSize > descSize)
+            maxChunkSize = descSize;
+    }
+
+    mutSize = mutator(data + off, chunkSize, maxChunkSize);
+
+    if (size > off + chunkSize) {
+        size_t j;
+
+        for (j = mutSize; j < chunkSize; j++)
+            data[off + j] = 0;
+
+        ret = size;
+    } else {
+        ret = off + mutSize;
+    }
+
+    return ret;
 }
 
